@@ -194,6 +194,66 @@ object AppSignature {
         return toHex(hashText)
     }
 
+    private fun getLocalApkPackageInfo(context: Context, apkPath: String): PackageInfo? {
+        return context.packageManager.getPackageArchiveInfo(
+            apkPath,
+            if (requireSdk28()) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        )
+    }
+
+    fun getLocalApkSignatures(context: Context, apkPath: String): Array<Signature>? {
+        val packageInfo = getLocalApkPackageInfo(context, apkPath)
+        return if (requireSdk28()) packageInfo?.signingInfo?.signingCertificateHistory else packageInfo?.signatures
+    }
+
+    fun getLocalApkFirstCryptedSignature(
+        context: Context,
+        apkPath: String,
+        cryptType: CryptType = CryptType.MD5
+    ): String {
+        return getLocalApkSignatures(context, apkPath)?.first()?.let {
+            getCryptedString(it.toByteArray(), cryptType)
+        } ?: ""
+    }
+
+    fun getLocalApkTotalCryptedSignature(
+        context: Context,
+        apkPath: String,
+        cryptType: CryptType = CryptType.MD5
+    ): String {
+        return getLocalApkSignatures(context, apkPath)?.let { signatures ->
+            val details = StringBuilder()
+            signatures.forEach { signature ->
+                details.append("\n")
+                details.append(getCryptedString(signature.toByteArray(), cryptType))
+            }
+            details.toString()
+        } ?: ""
+    }
+
+    fun getLocalApkFirstDecryptedSignature(
+        context: Context,
+        apkPath: String
+    ): String {
+        return getLocalApkSignatures(context, apkPath)?.first()?.let {
+            getDecryptedSignature(it).toString()
+        } ?: ""
+    }
+
+    fun getLocalApkTotalDecryptedSignature(
+        context: Context,
+        apkPath: String
+    ): String {
+        return getLocalApkSignatures(context, apkPath)?.let { signatures ->
+            val details = StringBuilder()
+            signatures.forEach { signature ->
+                details.append("\n")
+                details.append(getDecryptedSignature(signature))
+            }
+            details.toString()
+        } ?: ""
+    }
+
     private fun toHex(bytes: ByteArray): String {
         val hexArray =
             arrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F')
