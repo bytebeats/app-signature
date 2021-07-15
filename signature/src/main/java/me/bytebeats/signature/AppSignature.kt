@@ -6,7 +6,11 @@ import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.os.Build
 import androidx.annotation.ChecksSdkIntAtLeast
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
+import java.security.cert.CertificateException
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 
 /**
  * Created by bytebeats on 2021/7/15 : 16:50
@@ -19,7 +23,7 @@ object AppSignature {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
     }
 
-    fun getSignatures(context: Context, packageName: String): Array<Signature> {
+    private fun getSignatures(context: Context, packageName: String): Array<Signature> {
         return if (requireSdk28())
             context.packageManager.getPackageInfo(
                 packageName,
@@ -33,43 +37,46 @@ object AppSignature {
         }
     }
 
-    fun getSimpleSignature(
+    fun getFirstCryptedSignature(
         context: Context,
         packageName: String,
         cryptType: CryptType = CryptType.MD5
     ): String {
         val signatures = getSignatures(context, packageName)
         if (!signatures.isNullOrEmpty()) {
-            return getDigestString(signatures[0].toByteArray(), cryptType)
+            return getCryptedString(signatures[0].toByteArray(), cryptType)
         }
         return ""
     }
 
-    fun getDetailedSignature(
+    fun getTotalCryptedSignature(
         context: Context,
         packageName: String,
-        cryptType: CryptType
+        cryptType: CryptType = CryptType.MD5
     ): String {
-        val digest = StringBuilder()
+        val details = StringBuilder()
         val signatures = getSignatures(context, packageName)
         signatures.forEachIndexed { index, signature ->
-            digest.append(getDigestString(signature.toByteArray(), cryptType))
-            if (index != signatures.lastIndex) {
-                digest.append("\n")
+            if (index != 0) {
+                details.append("\n")
             }
+            details.append(getCryptedString(signature.toByteArray(), cryptType))
         }
-        return digest.toString()
+        return details.toString()
     }
 
-    fun getAppSimpleSignature(context: Context, cryptType: CryptType = CryptType.MD5): String {
-        return getSimpleSignature(context, context.packageName, cryptType)
-    }
-
-    fun getAppDetailedSignature(
+    fun getAppFirstCryptedSignature(
         context: Context,
-        cryptType: CryptType
+        cryptType: CryptType = CryptType.MD5
     ): String {
-        return getDetailedSignature(context, context.packageName, cryptType)
+        return getFirstCryptedSignature(context, context.packageName, cryptType)
+    }
+
+    fun getAppTotalCryptedSignature(
+        context: Context,
+        cryptType: CryptType = CryptType.MD5
+    ): String {
+        return getTotalCryptedSignature(context, context.packageName, cryptType)
     }
 
     fun getAppSignatures(context: Context): Array<Signature> {
@@ -94,20 +101,20 @@ object AppSignature {
         }
     }
 
-    fun getInstalledAppSimpleSignatures(
+    fun getInstalledAppFirstCryptedSignatures(
         context: Context,
         cryptType: CryptType = CryptType.MD5
     ): List<String> {
         return getInstalledAppSignatures(context).map { it[0] }
-            .map { getDigestString(it.toByteArray(), cryptType) }
+            .map { getCryptedString(it.toByteArray(), cryptType) }
     }
 
-    fun getInstalledAppDetailedSignatures(
+    fun getInstalledAppTotalCryptedSignatures(
         context: Context,
         cryptType: CryptType = CryptType.MD5
     ): List<String> {
         return getInstalledAppPackageInfos(context).map { packageInfo ->
-            getDetailedSignature(
+            getTotalCryptedSignature(
                 context,
                 packageInfo.packageName,
                 cryptType
@@ -115,7 +122,72 @@ object AppSignature {
         }
     }
 
-    fun getDigestString(signature: ByteArray, cryptType: CryptType = CryptType.MD5): String {
+    fun getDecryptedSignature(signature: Signature): StringBuilder {
+        val details = StringBuilder()
+        try {
+            val rawCertificate = signature.toByteArray()
+            val certStream = ByteArrayInputStream(rawCertificate)
+            val certificateFactory =
+                CertificateFactory.getInstance("X509") as CertificateFactory
+            val x509Certificate =
+                certificateFactory.generateCertificate(certStream) as X509Certificate
+            details.append("Certificate subject: ${x509Certificate.subjectDN}\n")
+            details.append("Certificate issuer: ${x509Certificate.issuerDN}\n")
+            details.append("Certificate serialNumber: ${x509Certificate.serialNumber}\n")
+        } catch (e: CertificateException) {
+            e.printStackTrace()
+        }
+        return details
+    }
+
+    fun getFirstDecryptedSignature(context: Context, packageName: String): String {
+        val signatures = getSignatures(context, packageName)
+        if (!signatures.isNullOrEmpty()) {
+            val details = StringBuilder("<br>$packageName<br/>\n")
+            details.append(getDecryptedSignature(signatures.first()))
+            return details.toString()
+        }
+        return ""
+    }
+
+    fun getTotalDecryptedSignature(context: Context, packageName: String): String {
+        val signatures = getSignatures(context, packageName)
+        if (!signatures.isNullOrEmpty()) {
+            val details = StringBuilder("<br>$packageName<br/>\n")
+            signatures.forEachIndexed { index, signature ->
+                if (index != 0) {
+                    details.append("\n")
+                }
+                details.append(getDecryptedSignature(signature))
+            }
+            return details.toString()
+        }
+        return ""
+    }
+
+    fun getAppFirstDecryptedSignature(context: Context): String {
+        return getFirstDecryptedSignature(context, context.packageName)
+    }
+
+    fun getAppTotalDecryptedSignature(context: Context): List<String> {
+        return getAppSignatures(context).map {
+            getDecryptedSignature(it).insert(0, "\n").toString()
+        }
+    }
+
+    fun getInstalledAppFirstDecryptedSignature(context: Context): List<String> {
+        return getInstalledAppPackageInfos(context).map {
+            val signatures = getSignatures(context, it.packageName)
+            val details = StringBuilder("<br>${it.packageName}<br/>\n")
+            details.append(getDecryptedSignature(signatures.first()))
+            details.toString()
+        }
+    }
+
+    private fun getCryptedString(
+        signature: ByteArray,
+        cryptType: CryptType = CryptType.MD5
+    ): String {
         val digest = MessageDigest.getInstance(cryptType.name)
         digest.update(signature)
         val hashText = digest.digest()
@@ -134,8 +206,6 @@ object AppSignature {
         }
         return String(hexChars)
     }
-
-
 
     enum class CryptType {
         MD5, SHA1, SHA256
