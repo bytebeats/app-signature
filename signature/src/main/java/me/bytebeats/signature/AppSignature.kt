@@ -203,7 +203,10 @@ object AppSignature {
 
     fun getLocalApkSignatures(context: Context, apkPath: String): Array<Signature>? {
         val packageInfo = getLocalApkPackageInfo(context, apkPath)
-        return if (requireSdk28()) packageInfo?.signingInfo?.signingCertificateHistory else packageInfo?.signatures
+        return if (requireSdk28())
+            packageInfo?.signingInfo?.signingCertificateHistory
+        else
+            packageInfo?.signatures
     }
 
     fun getLocalApkFirstCryptedSignature(
