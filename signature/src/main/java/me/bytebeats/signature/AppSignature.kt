@@ -44,7 +44,7 @@ object AppSignature {
     ): String {
         val signatures = getSignatures(context, packageName)
         if (!signatures.isNullOrEmpty()) {
-            return getCryptedString(signatures[0].toByteArray(), cryptType)
+            return getCryptedString(signatures[0], cryptType)
         }
         return ""
     }
@@ -60,7 +60,7 @@ object AppSignature {
             if (index != 0) {
                 details.append("\n")
             }
-            details.append(getCryptedString(signature.toByteArray(), cryptType))
+            details.append(getCryptedString(signature, cryptType))
         }
         return details.toString()
     }
@@ -106,7 +106,7 @@ object AppSignature {
         cryptType: CryptType = CryptType.MD5
     ): List<String> {
         return getInstalledAppSignatures(context).map { it[0] }
-            .map { getCryptedString(it.toByteArray(), cryptType) }
+            .map { getCryptedString(it, cryptType) }
     }
 
     fun getInstalledAppTotalCryptedSignatures(
@@ -185,11 +185,11 @@ object AppSignature {
     }
 
     private fun getCryptedString(
-        signature: ByteArray,
+        signature: Signature,
         cryptType: CryptType = CryptType.MD5
     ): String {
         val digest = MessageDigest.getInstance(cryptType.name)
-        digest.update(signature)
+        digest.update(signature.toByteArray())
         val hashText = digest.digest()
         return toHex(hashText)
     }
@@ -197,16 +197,18 @@ object AppSignature {
     private fun getLocalApkPackageInfo(context: Context, apkPath: String): PackageInfo? {
         return context.packageManager.getPackageArchiveInfo(
             apkPath,
-            if (requireSdk28()) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            if (requireSdk28()) PackageManager.GET_SIGNING_CERTIFICATES else
+                PackageManager.GET_SIGNATURES
         )
     }
 
     fun getLocalApkSignatures(context: Context, apkPath: String): Array<Signature>? {
         val packageInfo = getLocalApkPackageInfo(context, apkPath)
+            ?: throw IllegalStateException("External apk can't be parsed")
         return if (requireSdk28())
-            packageInfo?.signingInfo?.signingCertificateHistory
+            packageInfo.signingInfo?.signingCertificateHistory
         else
-            packageInfo?.signatures
+            packageInfo.signatures
     }
 
     fun getLocalApkFirstCryptedSignature(
@@ -214,9 +216,10 @@ object AppSignature {
         apkPath: String,
         cryptType: CryptType = CryptType.MD5
     ): String {
-        return getLocalApkSignatures(context, apkPath)?.first()?.let {
-            getCryptedString(it.toByteArray(), cryptType)
-        } ?: ""
+        return getLocalApkSignatures(context, apkPath)
+            ?.first()?.let {
+                getCryptedString(it, cryptType)
+            } ?: ""
     }
 
     fun getLocalApkTotalCryptedSignature(
@@ -228,7 +231,7 @@ object AppSignature {
             val details = StringBuilder()
             signatures.forEach { signature ->
                 details.append("\n")
-                details.append(getCryptedString(signature.toByteArray(), cryptType))
+                details.append(getCryptedString(signature, cryptType))
             }
             details.toString()
         } ?: ""
