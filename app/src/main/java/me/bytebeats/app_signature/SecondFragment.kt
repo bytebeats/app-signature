@@ -8,13 +8,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import androidx.core.os.EnvironmentCompat
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import me.bytebeats.app_signature.databinding.FragmentSecondBinding
 import me.bytebeats.signature.AppSignature
+import me.bytebeats.spm.StoragePermissionManager
 import java.io.File
+import java.io.FileOutputStream
 import java.io.FilenameFilter
 
 /**
@@ -35,6 +38,12 @@ class SecondFragment : Fragment() {
                     binding.textviewSignature.text = apkFiles[position].absolutePath
                 }
             }
+        }
+    }
+
+    private val launcher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            binding.textviewSecond.setText(it.path)
         }
     }
 
@@ -65,6 +74,40 @@ class SecondFragment : Fragment() {
                 requireContext(),
                 binding.textviewSecond.text.toString()
             )
+        }
+        binding.buttonSecond.setOnClickListener {
+//            launcher.launch(APK_MIME_TYPE)
+            binding.textviewSecond.setText(
+                File(
+                    requireContext().filesDir,
+                    APK_FILE_NAME
+                ).absolutePath
+            )
+        }
+
+        binding.buttonThird.setOnClickListener {
+            StoragePermissionManager.with(requireActivity()).requestStoragePermission(object :
+                StoragePermissionManager.OnStoragePermissionResult {
+                override fun onPermissionDenied() {
+                    Toast.makeText(requireContext(), "No Storage Permission", Toast.LENGTH_SHORT)
+                        .show()
+                }
+
+                override fun onPermissionGranted() {
+                    File(
+                        requireContext().filesDir,
+                        APK_FILE_NAME
+                    ).let {
+                        if (it.exists()) it.delete()
+                        if (!it.exists()) it.parentFile.mkdirs()
+                        FileOutputStream(it).use { fos ->
+                            resources.openRawResource(R.raw.app_debug_apk).use { ris ->
+                                fos.write(ris.readBytes())
+                            }
+                        }
+                    }
+                }
+            })
         }
     }
 
@@ -128,5 +171,10 @@ class SecondFragment : Fragment() {
 
     private interface OnItemClickListener {
         fun onItemClick(position: Int)
+    }
+
+    companion object {
+        const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+        private const val APK_FILE_NAME = "app-signature.apk"
     }
 }
